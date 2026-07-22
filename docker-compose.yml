@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  pose3d:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pose3d_service
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - DEFAULT_EMA_ALPHA=0.3
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

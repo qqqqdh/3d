@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>카메라 클라이언트 (MediaPipe Pose Streaming)</title>
+    <!-- Google Fonts: Outfit & Noto Sans KR -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg-base: #0b0d10;
+            --bg-surface: #13171d;
+            --bg-card: #1b2028;
+            --text-primary: #ffffff;
+            --text-secondary: #a0a8b5;
+            --color-accent: #00f0ff;
+            --color-accent-glow: rgba(0, 240, 255, 0.4);
+            --color-success: #2ed573;
+            --color-warning: #ffa502;
+            --color-danger: #ff4757;
+            --border-color: #272d37;
+            --radius-lg: 16px;
+            --radius-md: 8px;
+            --font-display: 'Outfit', 'Noto Sans KR', sans-serif;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-base);
+            color: var(--text-primary);
+            font-family: var(--font-display);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        header {
+            background-color: var(--bg-surface);
+            border-bottom: 1px solid var(--border-color);
+            padding: 12px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 64px;
+        }
+
+        h1 {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 30px;
+            font-size: 0.85rem;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background-color: var(--color-danger);
+            border-radius: 50%;
+        }
+
+        .status-dot.connected {
+            background-color: var(--color-success);
+            box-shadow: 0 0 8px var(--color-success);
+        }
+
+        .container {
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            flex-grow: 1;
+            height: calc(100vh - 64px);
+        }
+
+        .sidebar {
+            background-color: var(--bg-surface);
+            border-right: 1px solid var(--border-color);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            overflow-y: auto;
+        }
+
+        .panel-card {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .panel-title {
+            font-size: 0.9rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-secondary);
+            border-left: 3px solid var(--color-accent);
+            padding-left: 8px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        label {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .select-input, .text-input {
+            background-color: #0b0d10;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 8px 12px;
+            color: var(--text-primary);
+            font-size: 0.85rem;
+            outline: none;
+            width: 100%;
+        }
+
+        .select-input:focus, .text-input:focus {
+            border-color: var(--color-accent);
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background-color: var(--color-accent);
+            color: #000;
+            border: none;
+            border-radius: var(--radius-md);
+            padding: 10px 16px;
+            font-size: 0.85rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            width: 100%;
+            text-align: center;
+        }
+
+        .btn-primary:hover {
+            background-color: #00d8e6;
+            box-shadow: 0 0 15px var(--color-accent-glow);
+        }
+
+        .main-view {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: var(--bg-base);
+            position: relative;
+            padding: 20px;
+        }
+
+        .video-container {
+            max-width: 640px;
+            max-height: 480px;
+            width: 100%;
+            height: 100%;
+            border: 2px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            position: relative;
+            overflow: hidden;
+            background-color: #000;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+
+        #webcam {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1); /* Mirror camera output */
+            display: none;
+        }
+
+        #overlay-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            transform: scaleX(-1); /* Mirror drawings to match mirrored webcam */
+        }
+
+        .console-log {
+            background-color: #080a0c;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            height: 100px;
+            padding: 8px 12px;
+            font-family: monospace;
+            font-size: 0.7rem;
+            color: #55e6c1;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>카메라 클라이언트 (2D Pose Streaming)</h1>
+        <div class="status-badge">
+            <div id="ws-dot" class="status-dot"></div>
+            <span id="ws-text">연결 대기 중</span>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- Sidebar Controls -->
+        <div class="sidebar">
+            <div class="panel-card">
+                <span class="panel-title">스트리밍 설정</span>
+                
+                <div class="form-group">
+                    <label for="camera-id">카메라 ID</label>
+                    <select id="camera-id" class="select-input">
+                        <option value="1">CAMERA 1 (정면 뷰)</option>
+                        <option value="2" selected>CAMERA 2 (오른쪽 측면 뷰)</option>
+                        <option value="3">CAMERA 3 (대각선 뷰)</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="server-host">서버 주소</label>
+                    <input type="text" id="server-host" class="text-input" value="localhost:8080">
+                </div>
+
+                <button id="btn-stream" class="btn-primary">스트리밍 시작</button>
+            </div>
+
+            <!-- Position Config -->
+            <div class="panel-card">
+                <span class="panel-title">카메라 월드 좌표 설정</span>
+                <p style="font-size: 0.7rem; color: var(--text-secondary); line-height: 1.4;">
+                    대시보드와 물리 카메라의 위치 정보를 매칭하기 위해 월드 기준 3D 좌표 [X, Y, Z]를 입력하세요.
+                </p>
+                <div class="form-group">
+                    <label>카메라 3차원 위치 (Meters)</label>
+                    <div class="form-row">
+                        <input type="number" id="cam-x" class="text-input" step="0.5" value="3.0">
+                        <input type="number" id="cam-y" class="text-input" step="0.5" value="1.0">
+                        <input type="number" id="cam-z" class="text-input" step="0.5" value="0.0">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Console Log -->
+            <div class="panel-card">
+                <span class="panel-title">연결 콘솔</span>
+                <div id="cam-console" class="console-log">초기화 대기 중...</div>
+            </div>
+        </div>
+
+        <!-- Main Webcam View -->
+        <div class="main-view">
+            <div class="video-container">
+                <video id="webcam" autoplay playsinline></video>
+                <canvas id="overlay-canvas" width="640" height="480"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- MediaPipe Pose CDN Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+
+    <script>
+        // Console logging helper
+        const camConsole = document.getElementById("cam-console");
+        function logToConsole(msg) {
+            const timeStr = new Date().toLocaleTimeString();
+            camConsole.textContent = `[${timeStr}] ${msg}\n` + camConsole.textContent;
+        }
+
+        // --- WebSocket Setup ---
+        let wsConn = null;
+        let isConnected = false;
+        let isStreaming = false;
+        let frameIndex = 0;
+
+        const wsDot = document.getElementById("ws-dot");
+        const wsText = document.getElementById("ws-text");
+
+        function updateWSStatus(status, text) {
+            wsDot.className = "status-dot";
+            if (status === "connected") {
+                wsDot.classList.add("connected");
+            }
+            wsText.textContent = text;
+        }
+
+        // Camera position presets based on selected Camera ID
+        const cameraPresets = {
+            1: { x: 0.0, y: 1.0, z: 3.0 },
+            2: { x: 3.0, y: 1.0, z: 0.0 },
+            3: { x: -2.0, y: 1.5, z: 2.0 }
+        };
+
+        const cameraIdSelect = document.getElementById("camera-id");
+        const camX = document.getElementById("cam-x");
+        const camY = document.getElementById("cam-y");
+        const camZ = document.getElementById("cam-z");
+
+        cameraIdSelect.addEventListener("change", (e) => {
+            const id = e.target.value;
+            if (cameraPresets[id]) {
+                camX.value = cameraPresets[id].x;
+                camY.value = cameraPresets[id].y;
+                camZ.value = cameraPresets[id].z;
+                logToConsole(`카메라 ${id} 프리셋 좌표 로드 완료`);
+            }
+        });
+
+        // --- Camera Matrix Calculation (same as dashboard) ---
+        const fx = 800.0, fy = 800.0;
+        const cx = 320.0, cy = 240.0;
+
+        function normalizeVec(v) {
+            const len = Math.sqrt(v.x*v.x + v.y*v.y + v.z*v.z);
+            if (len === 0) return { x: 0, y: 0, z: 0 };
+            return { x: v.x/len, y: v.y/len, z: v.z/len };
+        }
+
+        function crossVec(a, b) {
+            return {
+                x: a.y*b.z - a.z*b.y,
+                y: a.z*b.x - a.x*b.z,
+                z: a.x*b.y - a.y*b.x
+            };
+        }
+
+        function getProjectionMatrix() {
+            const camPos = {
+                x: parseFloat(camX.value) || 0.0,
+                y: parseFloat(camY.value) || 0.0,
+                z: parseFloat(camZ.value) || 0.0
+            };
+            const targetPos = { x: 0, y: 1.0, z: 0 };
+            
+            const zcam = normalizeVec({ x: camPos.x - targetPos.x, y: camPos.y - targetPos.y, z: camPos.z - targetPos.z });
+            const yworld = { x: 0, y: 1, z: 0 };
+            const xcam = normalizeVec(crossVec(yworld, zcam));
+            const ycam = crossVec(zcam, xcam);
+
+            const R = [
+                [xcam.x, xcam.y, xcam.z],
+                [ycam.x, ycam.y, ycam.z],
+                [zcam.x, zcam.y, zcam.z]
+            ];
+
+            const T = [
+                -(R[0][0]*camPos.x + R[0][1]*camPos.y + R[0][2]*camPos.z),
+                -(R[1][0]*camPos.x + R[1][1]*camPos.y + R[1][2]*camPos.z),
+                -(R[2][0]*camPos.x + R[2][1]*camPos.y + R[2][2]*camPos.z)
+            ];
+
+            const P = [
+                [0, 0, 0, 0],
+                [0, 0, 0, 0],
+                [0, 0, 0, 0]
+            ];
+
+            for (let r = 0; r < 3; r++) {
+                let kr0 = (r === 0) ? fx : 0;
+                let kr1 = (r === 1) ? fy : 0;
+                let kr2 = (r === 0) ? cx : ((r === 1) ? cy : 1);
+
+                for (let c = 0; c < 3; c++) {
+                    P[r][c] = kr0*R[0][c] + kr1*R[1][c] + kr2*R[2][c];
+                }
+                P[r][3] = kr0*T[0] + kr1*T[1] + kr2*T[2];
+            }
+
+            return P;
+        }
+
+        // --- MediaPipe Pose Setup ---
+        const videoElement = document.getElementById("webcam");
+        const canvasElement = document.getElementById("overlay-canvas");
+        const canvasCtx = canvasElement.getContext("2d");
+
+        const pose = new Pose({
+            locateFile: (file) => {
+                return `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`;
+            }
+        });
+
+        pose.setOptions({
+            modelComplexity: 1,
+            smoothLandmarks: true,
+            enableSegmentation: false,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        pose.onResults(onPoseResults);
+
+        function onPoseResults(results) {
+            // Draw visual pose overlay
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+            // Draw video feed onto canvas (with horizontal mirroring)
+            canvasCtx.translate(canvasElement.width, 0);
+            canvasCtx.scale(-1, 1);
+            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.restore();
+
+            if (results.poseLandmarks) {
+                // Draw 2D skeletal lines in client
+                drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, { color: '#00f0ff', lineWidth: 3 });
+                drawLandmarks(canvasCtx, results.poseLandmarks, { color: '#ff4757', lineWidth: 1, radius: 4 });
+
+                // Stream 2D Coordinates via WebSocket
+                if (isConnected && isStreaming) {
+                    frameIndex++;
+                    
+                    // Map landmarks: MediaPipe normalized coordinates (0 to 1) -> Image pixel coordinates
+                    // MediaPipe 2D coordinates are normalized. We scale them back to 640x480 resolution (our camera intrinsics setting).
+                    const formattedLandmarks = results.poseLandmarks.map(lm => {
+                        return {
+                            u: lm.x * 640,
+                            v: lm.y * 480,
+                            visibility: lm.visibility || 0.0
+                        };
+                    });
+
+                    const payload = {
+                        type: "camera_data",
+                        camera_id: parseInt(cameraIdSelect.value),
+                        frame_index: frameIndex,
+                        timestamp: Date.now(),
+                        projection_matrix: getProjectionMatrix(),
+                        landmarks: formattedLandmarks
+                    };
+
+                    wsConn.send(JSON.stringify(payload));
+                }
+            }
+        }
+
+        // --- Start/Stop Video Stream and WS ---
+        const btnStream = document.getElementById("btn-stream");
+        let activeCamera = null;
+
+        btnStream.addEventListener("click", () => {
+            if (isStreaming) {
+                stopStreaming();
+            } else {
+                startStreaming();
+            }
+        });
+
+        function startStreaming() {
+            const host = document.getElementById("server-host").value;
+            logToConsole(`Go 백엔드 웹소켓 연결 중: ws://${host}/ws`);
+            
+            wsConn = new WebSocket(`ws://${host}/ws`);
+
+            wsConn.onopen = () => {
+                isConnected = true;
+                isStreaming = true;
+                updateWSStatus("connected", "스트리밍 중");
+                btnStream.textContent = "스트리밍 중지";
+                btnStream.style.backgroundColor = "var(--color-danger)";
+                logToConsole("서버 연결 및 스트리밍이 정상 시작되었습니다!");
+                
+                // Initialize device camera
+                activeCamera = new Camera(videoElement, {
+                    onFrame: async () => {
+                        await pose.send({ image: videoElement });
+                    },
+                    width: 640,
+                    height: 480
+                });
+                activeCamera.start();
+                logToConsole("기기 웹캠 촬영 시작");
+            };
+
+            wsConn.onclose = () => {
+                isConnected = false;
+                isStreaming = false;
+                updateWSStatus("disconnected", "연결 끊김");
+                btnStream.textContent = "스트리밍 시작";
+                btnStream.style.backgroundColor = "var(--color-accent)";
+                logToConsole("서버 연결이 해제되었습니다.");
+                if (activeCamera) {
+                    activeCamera.stop();
+                }
+            };
+
+            wsConn.onerror = (err) => {
+                logToConsole("통신 실패! 서버 연결 정보를 확인해 주세요.");
+            };
+        }
+
+        function stopStreaming() {
+            isStreaming = false;
+            if (wsConn) wsConn.close();
+            if (activeCamera) activeCamera.stop();
+            logToConsole("스트리밍 촬영이 중지되었습니다.");
+        }
+
+        logToConsole("시스템 로딩 완료. 스트리밍 시작을 대기합니다.");
+    </script>
+</body>
+</html>
