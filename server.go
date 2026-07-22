@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"math"
 	"net/http"
@@ -67,6 +68,14 @@ type DashboardMessage struct {
 	Warnings   map[string]bool    `json:"warnings"`
 }
 
+// StatusMessage is sent from the server to dashboards when active cameras count changes.
+type StatusMessage struct {
+	Type          string `json:"type"`
+	ActiveCount   int    `json:"active_count"`
+	ActiveCameras []int  `json:"active_cameras"`
+	Message       string `json:"message"`
+}
+
 // Global System Configuration and State
 type SystemState struct {
 	mu          sync.RWMutex
@@ -80,6 +89,9 @@ type SystemState struct {
 
 	// Synchronization buffer: frame_index -> camera_id -> CameraData
 	syncBuffer map[int64]map[int]CameraData
+
+	// Active cameras tracking
+	activeCameras map[int]time.Time
 }
 
 var state = SystemState{
@@ -93,7 +105,8 @@ var state = SystemState{
 		"left_hip":    {Min: 60, Max: 180},
 		"right_hip":   {Min: 60, Max: 180},
 	},
-	syncBuffer: make(map[int64]map[int]CameraData),
+	syncBuffer:    make(map[int64]map[int]CameraData),
+	activeCameras: make(map[int]time.Time),
 }
 
 func main() {
@@ -221,11 +234,28 @@ func handleCameraData(data CameraData) {
 	state.mu.Lock()
 	defer state.mu.Unlock()
 
+	// Track active camera timestamp
+	if state.activeCameras == nil {
+		state.activeCameras = make(map[int]time.Time)
+	}
+	state.activeCameras[data.CameraID] = time.Now()
+
 	// Ensure the inner map exists for this frame index
 	if _, ok := state.syncBuffer[data.FrameIndex]; !ok {
 		state.syncBuffer[data.FrameIndex] = make(map[int]CameraData)
 	}
 	state.syncBuffer[data.FrameIndex][data.CameraID] = data
+
+	// Count cameras active in the last 3 seconds
+	activeCount := 0
+	var activeList []int
+	now := time.Now()
+	for id, lastSeen := range state.activeCameras {
+		if now.Sub(lastSeen) < 3*time.Second {
+			activeCount++
+			activeList = append(activeList, id)
+		}
+	}
 
 	framesAvailable := state.syncBuffer[data.FrameIndex]
 	if len(framesAvailable) >= 3 {
@@ -235,10 +265,29 @@ func handleCameraData(data CameraData) {
 	} else {
 		// Fallback for dropped frames: if a newer frame index has arrived,
 		// run 2-camera triangulation on the older buffered frame indices.
+		reconstructed := false
 		for idx, cams := range state.syncBuffer {
 			if idx < data.FrameIndex && len(cams) >= 2 {
 				reconstructPose(idx, cams)
 				cleanBuffer(idx)
+				reconstructed = true
+			}
+		}
+
+		// If no reconstruction could happen and we have less than 2 active cameras,
+		// broadcast a status warning.
+		if !reconstructed && activeCount < 2 {
+			msg := StatusMessage{
+				Type:          "status",
+				ActiveCount:   activeCount,
+				ActiveCameras: activeList,
+				Message:       fmt.Sprintf("3D 복원을 위해서는 최소 2대 이상의 카메라가 데이터를 전송해야 합니다. (현재 연결된 카메라: %d대)", activeCount),
+			}
+			msgBytes, _ := json.Marshal(msg)
+			for client := range state.dashboards {
+				go func(c *websocket.Conn) {
+					_, _ = c.Write(msgBytes)
+				}(client)
 			}
 		}
 	}

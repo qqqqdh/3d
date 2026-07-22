@@ -580,6 +580,33 @@
             100% { transform: scale(1); }
         }
 
+        .camera-status-banner {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translate(-50%, -20px);
+            background: rgba(255, 165, 2, 0.95);
+            border: 1px solid var(--color-warning);
+            box-shadow: 0 0 15px rgba(255, 165, 2, 0.4);
+            padding: 10px 18px;
+            border-radius: var(--radius-md);
+            color: #000;
+            font-weight: 700;
+            font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            z-index: 4;
+            pointer-events: none;
+            opacity: 0;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .camera-status-banner.show {
+            opacity: 1;
+            transform: translate(-50%, 0);
+        }
+
         .console-log {
             background-color: #080a0c;
             border: 1px solid var(--border-color);
@@ -682,6 +709,12 @@
             <div id="alert-banner" class="alert-banner">
                 <span class="alert-icon">⚠️</span>
                 <span id="alert-text">자세 경고: 무릎 관절 범위를 초과했습니다!</span>
+            </div>
+
+            <!-- Camera Status Banner -->
+            <div id="camera-status-banner" class="camera-status-banner">
+                <span>ℹ️</span>
+                <span id="camera-status-text">3D 복원 대기 중...</span>
             </div>
 
             <div id="canvas-container">
@@ -852,7 +885,8 @@
 
     <script>
         // --- WebSockets Connection ---
-        const wsUrl = `ws://${window.location.host}/ws`;
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
         let wsConn = null;
         let isConnected = false;
         
@@ -885,6 +919,18 @@
             sysConsole.textContent = `[${timeStr}] ${msg}\n` + sysConsole.textContent;
         }
 
+        const cameraStatusBanner = document.getElementById("camera-status-banner");
+        const cameraStatusText = document.getElementById("camera-status-text");
+
+        function showCameraWarning(message) {
+            cameraStatusText.textContent = message;
+            cameraStatusBanner.classList.add("show");
+        }
+
+        function hideCameraWarning() {
+            cameraStatusBanner.classList.remove("show");
+        }
+
         function connectWS() {
             logToConsole("Go 서버 웹소켓 연결 시도 중...");
             wsConn = new WebSocket(wsUrl);
@@ -910,7 +956,10 @@
             wsConn.onmessage = (event) => {
                 const data = JSON.parse(event.data);
                 if (data.type === "pose_3d") {
+                    hideCameraWarning();
                     handlePose3D(data);
+                } else if (data.type === "status") {
+                    showCameraWarning(data.message);
                 }
             };
         }

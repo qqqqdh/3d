@@ -481,9 +481,10 @@
 
         function startStreaming() {
             const host = document.getElementById("server-host").value;
-            logToConsole(`Go 백엔드 웹소켓 연결 중: ws://${host}/ws`);
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            logToConsole(`Go 백엔드 웹소켓 연결 중: ${wsProtocol}//${host}/ws`);
             
-            wsConn = new WebSocket(`ws://${host}/ws`);
+            wsConn = new WebSocket(`${wsProtocol}//${host}/ws`);
 
             wsConn.onopen = () => {
                 isConnected = true;
@@ -527,6 +528,11 @@
             if (wsConn) wsConn.close();
             if (activeCamera) activeCamera.stop();
             logToConsole("스트리밍 촬영이 중지되었습니다.");
+        }
+
+        // Initialize default server host to window location
+        if (window.location.host) {
+            document.getElementById("server-host").value = window.location.host;
         }
 
         logToConsole("시스템 로딩 완료. 스트리밍 시작을 대기합니다.");
